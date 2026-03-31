@@ -230,6 +230,7 @@ async def get_scrape_job_detail(
         leads=[
             {
                 "company_name": lead.company_name,
+                "website": lead.website,
                 "decision_maker_name": lead.decision_maker_name,
                 "title": lead.title,
                 "verified_email": lead.verified_email,

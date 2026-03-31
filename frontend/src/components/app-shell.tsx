@@ -20,6 +20,7 @@ interface AppShellProps {
 const NAV = [
   { href: "/", label: "Scrape", hint: "Find leads" },
   { href: "/history", label: "History", hint: "Past jobs" },
+  { href: "/releases", label: "Releases", hint: "What's new" },
 ];
 
 /**

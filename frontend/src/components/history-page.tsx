@@ -3,7 +3,6 @@
 import { useAuth } from "@clerk/nextjs";
 import { useCallback, useEffect, useState } from "react";
 import { getScrapeHistory, getScrapeJobDetail } from "@/lib/api";
-import { exportLeadsToCsv } from "@/lib/csv-export";
 import type { Lead, ScrapeJobSummary } from "@/types/lead";
 import { AppShell } from "@/components/app-shell";
 import { LeadsTable } from "@/components/leads-table";
@@ -169,19 +168,9 @@ export function HistoryPage() {
 
         {selectedJob ? (
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-display text-lg font-semibold text-ink">
-                {selectedJob.niche} · {selectedJob.location}
-              </h2>
-              <button
-                type="button"
-                disabled={selectedLeads.length === 0}
-                onClick={() => exportLeadsToCsv(selectedLeads)}
-                className="btn-secondary"
-              >
-                Export CSV
-              </button>
-            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">
+              {selectedJob.niche} · {selectedJob.location}
+            </h2>
             {isLoadingDetail ? (
               <p className="text-center text-sm text-ink/50">Loading leads…</p>
             ) : (

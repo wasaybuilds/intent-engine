@@ -149,8 +149,21 @@ class LeadScraper:
                     )
 
                     lead = await self._enrich_company(company)
-                    if lead and lead.decision_maker_name:
-                        enriched.append(lead)
+                    if not lead:
+                        continue
+
+                    # Keep company rows even when no named contact was found —
+                    # otherwise discovery succeeds but the UI shows zero leads.
+                    if not lead.decision_maker_name:
+                        lead.decision_maker_name = "Owner / Team"
+                        lead.title = lead.title or "Decision Maker"
+                        lead.enrichment_source = lead.enrichment_source or "partial"
+                        logger.info(
+                            "No named contact for %s — keeping company as partial lead",
+                            company["company_name"],
+                        )
+
+                    enriched.append(lead)
 
                 self._report(
                     "VALIDATION",
@@ -272,14 +285,15 @@ class LeadScraper:
                     await listing.click()
                     await page.wait_for_timeout(self.config.navigation_delay_ms)
 
+                    # Keep businesses without a website too — they surface as
+                    # "no site" leads instead of silently disappearing
                     website = await self._extract_website_from_detail(page)
-                    if website:
-                        results.append(
-                            {
-                                "company_name": name.strip(),
-                                "website": self._prefer_https(website),
-                            }
-                        )
+                    results.append(
+                        {
+                            "company_name": name.strip(),
+                            "website": self._prefer_https(website) if website else "",
+                        }
+                    )
                 except Exception as exc:
                     logger.warning("Failed to parse listing %d: %s", i, exc)
                     continue
@@ -393,6 +407,13 @@ class LeadScraper:
         @param company - Dict with company_name and website
         @returns Enriched CompanyLead
         """
+        # No website discovered — nothing to scrape or enrich, return a bare lead
+        if not company.get("website"):
+            return CompanyLead(
+                company_name=company["company_name"],
+                website="",
+            )
+
         base_url = self._prefer_https(company["website"])
         parsed = urlparse(base_url)
         origin = f"https://{parsed.netloc}"
@@ -584,7 +605,13 @@ class LeadScraper:
                 continue
 
             domain = extract_domain(lead.website)
-            if not domain or not lead.decision_maker_name:
+            # Skip SMTP guessing for placeholder / partial contacts
+            if (
+                not domain
+                or not lead.decision_maker_name
+                or lead.enrichment_source == "partial"
+                or lead.decision_maker_name == "Owner / Team"
+            ):
                 validated.append(lead)
                 continue
 
@@ -609,6 +636,7 @@ class LeadScraper:
         rows = [
             {
                 "company_name": lead.company_name,
+                "website": lead.website,
                 "decision_maker_name": lead.decision_maker_name,
                 "title": lead.title,
                 "verified_email": lead.verified_email,

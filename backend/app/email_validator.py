@@ -34,7 +34,8 @@ GENERIC_LOCAL_PARTS = frozenset(
 TITLE_KEYWORDS = re.compile(
     r"\b("
     r"CEO|Chief Executive Officer|Founder|Co-Founder|Owner|President|"
-    r"Managing Director|Director|Managing Partner|Principal|Partner"
+    r"Managing Director|General Manager|Operations Manager|Manager|"
+    r"Director|Managing Partner|Principal|Partner|Proprietor"
     r")\b",
     re.IGNORECASE,
 )

@@ -18,6 +18,7 @@ class LeadResult(BaseModel):
     """A single enriched lead with intent signals and personalization."""
 
     company_name: str
+    website: str = ""
     decision_maker_name: str
     title: str
     verified_email: str

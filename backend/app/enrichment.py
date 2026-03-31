@@ -14,9 +14,36 @@ from app.email_validator import TITLE_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
+# Free Hunter plans reject limit > 10 — keep within that ceiling
+HUNTER_RESULT_LIMIT = 10
+
 DECISION_TITLE_PATTERN = re.compile(
-    r"\b(ceo|chief executive|founder|co-founder|owner|president|managing director)\b",
+    r"\b("
+    r"ceo|chief executive|founder|co-?founder|owner|president|"
+    r"managing director|general manager|operations manager|manager|"
+    r"director|principal|partner|proprietor"
+    r")\b",
     re.IGNORECASE,
+)
+
+GENERIC_LOCAL_PARTS = frozenset(
+    {
+        "info",
+        "contact",
+        "hello",
+        "support",
+        "sales",
+        "admin",
+        "office",
+        "team",
+        "help",
+        "enquiries",
+        "inquiries",
+        "mail",
+        "general",
+        "noreply",
+        "no-reply",
+    }
 )
 
 
@@ -72,7 +99,9 @@ def fallback_enrich_decision_maker(domain: str, company_name: str = "") -> Optio
 
 def _hunter_domain_search(domain: str) -> Optional[FallbackContact]:
     """
-    Query Hunter.io Domain Search for executive contacts.
+    Query Hunter.io Domain Search for executive (or best available) contacts.
+
+    Free plans only allow up to 10 results — requesting more returns HTTP 400.
 
     @param domain - Target company domain
     @returns Best matching FallbackContact
@@ -81,12 +110,11 @@ def _hunter_domain_search(domain: str) -> Optional[FallbackContact]:
     params = {
         "domain": domain,
         "api_key": settings.hunter_api_key,
-        "limit": 20,
+        "limit": HUNTER_RESULT_LIMIT,
     }
 
     with httpx.Client(timeout=20.0) as client:
         response = client.get(url, params=params)
-        # Hunter returns 400 for some domains / plan limits — treat as no contact
         if response.status_code >= 400:
             logger.warning(
                 "Hunter.io domain-search %s for %s: %s",
@@ -101,41 +129,54 @@ def _hunter_domain_search(domain: str) -> Optional[FallbackContact]:
     if not isinstance(emails, list):
         return None
 
-    ranked: list[tuple[int, FallbackContact]] = []
+    executives: list[tuple[int, FallbackContact]] = []
+    personal_fallback: list[FallbackContact] = []
 
     for entry in emails:
         if not isinstance(entry, dict):
             continue
 
-        first = str(entry.get("first_name", "")).strip()
-        last = str(entry.get("last_name", "")).strip()
-        position = str(entry.get("position", "")).strip()
-        email = str(entry.get("value", "")).strip()
+        first = str(entry.get("first_name", "") or "").strip()
+        last = str(entry.get("last_name", "") or "").strip()
+        position = str(entry.get("position", "") or "").strip()
+        email = str(entry.get("value", "") or "").strip()
+        email_type = str(entry.get("type", "") or "").strip().lower()
 
         name = f"{first} {last}".strip()
-        if len(name.split()) < 2 or not position:
-            continue
-        if not DECISION_TITLE_PATTERN.search(position) and not TITLE_KEYWORDS.search(position):
+        if len(name.split()) < 2 or not email:
             continue
 
-        score = _title_priority(position)
-        ranked.append(
-            (
-                score,
-                FallbackContact(
-                    decision_maker_name=name,
-                    title=position,
-                    verified_email=email,
-                    source="hunter.io",
-                ),
-            )
+        local_part = email.split("@", 1)[0].lower()
+        if local_part in GENERIC_LOCAL_PARTS:
+            continue
+
+        contact = FallbackContact(
+            decision_maker_name=name,
+            title=position or "Team Member",
+            verified_email=email,
+            source="hunter.io",
         )
 
-    if not ranked:
-        return None
+        if position and (
+            DECISION_TITLE_PATTERN.search(position) or TITLE_KEYWORDS.search(position)
+        ):
+            executives.append((_title_priority(position), contact))
+        elif email_type == "personal" or (first and last):
+            # Keep named personal emails even without a C-suite title
+            personal_fallback.append(contact)
 
-    ranked.sort(key=lambda row: row[0])
-    return ranked[0][1]
+    if executives:
+        executives.sort(key=lambda row: row[0])
+        return executives[0][1]
+
+    if personal_fallback:
+        logger.info(
+            "Hunter.io: no executive title match for %s — using best named contact",
+            domain,
+        )
+        return personal_fallback[0]
+
+    return None
 
 
 def _apollo_domain_search(domain: str) -> Optional[FallbackContact]:
@@ -161,6 +202,7 @@ def _apollo_domain_search(domain: str) -> Optional[FallbackContact]:
             "Owner",
             "President",
             "Managing Director",
+            "General Manager",
         ],
         "page": 1,
         "per_page": 5,
@@ -185,13 +227,13 @@ def _apollo_domain_search(domain: str) -> Optional[FallbackContact]:
         email = str(person.get("email", "")).strip()
 
         name = f"{first} {last}".strip()
-        if len(name.split()) < 2 or not title:
+        if len(name.split()) < 2:
             continue
 
         return FallbackContact(
             decision_maker_name=name,
-            title=title,
-            verified_email=email,
+            title=title or "Decision Maker",
+            verified_email=email if email and email != "unavailable" else "",
             source="apollo.io",
         )
 
@@ -205,8 +247,12 @@ def _title_priority(title: str) -> int:
         return 0
     if "founder" in lower:
         return 1
-    if "owner" in lower:
+    if "owner" in lower or "proprietor" in lower:
         return 2
     if "president" in lower:
         return 3
-    return 4
+    if "general manager" in lower or "managing director" in lower:
+        return 4
+    if "manager" in lower:
+        return 5
+    return 6

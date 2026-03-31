@@ -85,6 +85,7 @@ def save_leads_for_job(db: Session, task_id: str, leads: list[dict[str, Any]]) -
             Lead(
                 scrape_job_id=job.id,
                 company_name=row.get("company_name", ""),
+                website=row.get("website", ""),
                 decision_maker_name=row.get("decision_maker_name", ""),
                 title=row.get("title", ""),
                 verified_email=row.get("verified_email", ""),

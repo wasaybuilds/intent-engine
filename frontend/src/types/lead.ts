@@ -1,6 +1,8 @@
 /** A single enriched B2B lead returned by the scraper API. */
 export interface Lead {
   company_name: string;
+  /** Company website URL — empty string when the business has no site */
+  website: string;
   decision_maker_name: string;
   title: string;
   verified_email: string;

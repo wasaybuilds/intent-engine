@@ -25,6 +25,7 @@ export function exportLeadsToCsv(
 ): void {
   const headers = [
     "Company Name",
+    "Website",
     "Decision Maker Name",
     "Title",
     "Verified Email",
@@ -40,6 +41,7 @@ export function exportLeadsToCsv(
   const rows = leads.map((lead) =>
     [
       lead.company_name,
+      lead.website ?? "",
       lead.decision_maker_name,
       lead.title,
       lead.verified_email,

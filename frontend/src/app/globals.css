@@ -202,6 +202,16 @@ h3,
     background-color: #ffffff;
   }
 
+  .leads-thead {
+    background-color: var(--paper);
+    border-bottom: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  }
+
+  .leads-row:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: -2px;
+  }
+
   .nav-active {
     background-color: var(--paper);
     color: var(--ink);

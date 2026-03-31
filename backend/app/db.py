@@ -67,6 +67,7 @@ class Lead(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     scrape_job_id: Mapped[int] = mapped_column(ForeignKey("scrape_jobs.id"), index=True, nullable=False)
     company_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    website: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
     decision_maker_name: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     verified_email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
@@ -98,6 +99,7 @@ def _migrate_lead_columns() -> None:
 
     existing = {col["name"] for col in inspector.get_columns("leads")}
     additions = {
+        "website": "VARCHAR(1024) DEFAULT ''",
         "email_1_initial": "TEXT DEFAULT ''",
         "email_2_followup": "TEXT DEFAULT ''",
         "email_3_breakup": "TEXT DEFAULT ''",
