@@ -40,13 +40,15 @@ SOURCE_PRIORITY = {
     "hunter.io": 1,
     "google_maps": 2,
     "website_owner": 3,
-    "website": 4,
+    "public_web_owner": 4,
+    "website": 5,
+    "public_web": 6,
 }
 
 
 @dataclass
 class VerifiedPhone:
-    """A phone number that passed dual verification."""
+    """A phone number that passed two structural validation passes."""
 
     number: str
     e164: str
@@ -170,10 +172,10 @@ def classify_phone_context(raw: str, surrounding_text: str = "") -> str:
     if PUBLIC_HINT_RE.search(blob):
         return "public"
 
-    # Carrier/line-type hint when available
+    # A carrier type alone does not prove ownership. In North America,
+    # libphonenumber commonly reports FIXED_LINE_OR_MOBILE for both business
+    # and cell lines, so only explicit nearby labels can make a phone personal.
     kind = detect_number_kind(raw)
-    if kind == "mobile":
-        return "personal"
     if kind in {"fixed_line", "toll_free"}:
         return "public"
     return "public"
@@ -229,7 +231,7 @@ def verify_phone_twice(
     default_region: str = "US",
 ) -> Optional[VerifiedPhone]:
     """
-    Verify a phone number in two independent passes (Apollo-style).
+    Validate a phone number in two structural passes.
 
     Pass 1 — structural parse + validity (phonenumbers).
     Pass 2 — re-parse E.164, possibility check, line-type sanity, optional Numverify.
@@ -337,7 +339,7 @@ def _pass2_confirm(
     kind: str,
 ) -> bool:
     """
-    Second independent verification pass.
+    Second structural validation pass.
 
     Re-parses the E.164 string, requires is_possible_number, enforces
     personal≠toll_free, and when NUMVERIFY_API_KEY is set confirms via API.

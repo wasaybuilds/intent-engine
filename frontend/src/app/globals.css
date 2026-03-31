@@ -60,7 +60,7 @@ h3,
     z-index: 50;
     display: flex;
     width: 100%;
-    max-width: 28rem;
+    max-width: 36rem;
     flex-direction: column;
     background-color: var(--paper);
     border-left: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);

@@ -7,7 +7,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 
 import httpx
 import pandas as pd
@@ -28,7 +28,6 @@ from app.phone_validator import (
     clean_phone_raw,
     extract_phone_candidates,
     extract_phones_near_name,
-    extract_tel_hrefs,
     pick_best_phones,
 )
 from app.proxy_manager import ProxyExhaustedError, ProxyRotator
@@ -73,13 +72,13 @@ class CompanyLead:
     email_2_followup: str = ""
     email_3_breakup: str = ""
     enrichment_source: str = "scrape"
-    # Public business line (Maps / website) — dual-verified when set
+    # Public business line (Maps / website) — format validated when set
     public_phone: str = ""
-    # Owner / personal mobile or direct dial — dual-verified when set
+    # Owner / personal mobile or direct dial — format validated when set
     personal_phone: str = ""
     public_phone_verified: bool = False
     personal_phone_verified: bool = False
-    # Raw candidates collected before dual verification
+    # Raw candidates collected before phone validation
     _phone_personal_raw: list[tuple[str, str]] = field(default_factory=list)
     _phone_public_raw: list[tuple[str, str]] = field(default_factory=list)
 
@@ -110,6 +109,7 @@ class LeadScraper:
         self.config = config or ScrapeConfig(max_companies=settings.max_companies)
         self.on_progress = on_progress
         self.niche = niche
+        self.location = ""
         self._browser: Optional[Browser] = None
         self._proxy_rotator = ProxyRotator.from_settings()
 
@@ -133,6 +133,7 @@ class LeadScraper:
         @returns Enriched lead dicts with intent signals and email sequences
         """
         self.niche = niche
+        self.location = location
 
         async with async_playwright() as playwright:
             try:
@@ -325,6 +326,7 @@ class LeadScraper:
                             "company_name": name.strip(),
                             "website": self._prefer_https(website) if website else "",
                             "public_phone": public_phone or "",
+                            "location": location,
                         }
                     )
                 except Exception as exc:
@@ -590,6 +592,8 @@ class LeadScraper:
                             {
                                 "company_name": name,
                                 "website": self._prefer_https(website),
+                                "public_phone": "",
+                                "location": location,
                             }
                         )
             except Exception as exc:
@@ -646,7 +650,16 @@ class LeadScraper:
         if maps_phone:
             public_raw.append((maps_phone, "google_maps"))
 
-        # No website — keep Maps public phone and return a partial lead shell
+        # If Maps has no number, query public search results even without paid
+        # enrichment. This commonly recovers directory-listed business lines.
+        if not public_raw:
+            _, web_public = await self._find_public_web_phones(
+                company["company_name"],
+                location=str(company.get("location") or self.location),
+            )
+            public_raw.extend((phone, "public_web") for phone in web_public)
+
+        # No website — keep Maps/public-web phone and return a partial lead shell
         if not company.get("website"):
             return CompanyLead(
                 company_name=company["company_name"],
@@ -770,6 +783,17 @@ class LeadScraper:
             for phone in api_public:
                 public_raw.append((phone, "apollo.io"))
 
+        # No paid API is required for this path: after all name sources have run,
+        # search indexed pages for an explicitly labeled owner mobile/direct line.
+        if best_name and not personal_raw:
+            web_personal, web_public = await self._find_public_web_phones(
+                company["company_name"],
+                person_name=best_name,
+                location=str(company.get("location") or self.location),
+            )
+            personal_raw.extend((phone, "public_web_owner") for phone in web_personal)
+            public_raw.extend((phone, "public_web") for phone in web_public)
+
         if not best_name:
             return CompanyLead(
                 company_name=company["company_name"],
@@ -820,10 +844,24 @@ class LeadScraper:
         Mobile/direct hints → personal candidates; everything else → public.
         """
         for html in html_chunks:
-            for tel in extract_tel_hrefs(html):
-                kind = classify_phone_context(tel, html[:500])
+            soup = BeautifulSoup(html, "lxml")
+
+            # Use each link's local parent text, not the start of the document,
+            # so labels such as "Owner mobile" classify the correct number.
+            for anchor in soup.select('a[href^="tel:"]'):
+                tel = clean_phone_raw(str(anchor.get("href") or ""))
+                context = anchor.parent.get_text(" ", strip=True) if anchor.parent else ""
+                kind = classify_phone_context(tel, context)
                 bucket = personal_raw if kind == "personal" else public_raw
-                bucket.append((tel, "website"))
+                if tel:
+                    bucket.append((tel, "website"))
+
+            # JSON-LD Organization/LocalBusiness telephone is a strong public
+            # source and often exists even when no visible tel: link does.
+            for script in soup.select('script[type="application/ld+json"]'):
+                payload = script.string or script.get_text(" ", strip=True)
+                for candidate in extract_phone_candidates(payload):
+                    public_raw.append((candidate, "website"))
 
             text = self._html_to_text(html)
             for candidate in extract_phone_candidates(text)[:5]:
@@ -833,6 +871,102 @@ class LeadScraper:
                 kind = classify_phone_context(candidate, window)
                 bucket = personal_raw if kind == "personal" else public_raw
                 bucket.append((candidate, "website"))
+
+    async def _find_public_web_phones(
+        self,
+        company_name: str,
+        *,
+        person_name: str = "",
+        location: str = "",
+    ) -> tuple[list[str], list[str]]:
+        """
+        Search public DuckDuckGo results for company and owner phone numbers.
+
+        This is the no-paid-API fallback. Company query results yield public
+        numbers. Owner results only yield personal candidates when the snippet
+        contains the full name and an explicit mobile/cell/direct label.
+
+        @param company_name - Business name
+        @param person_name - Optional decision-maker full name
+        @param location - Optional city/region for disambiguation
+        @returns (personal_candidates, public_candidates)
+        """
+        personal: list[str] = []
+        public: list[str] = []
+        queries = [
+            (
+                f'"{company_name}" {location} phone contact',
+                False,
+            )
+        ]
+        if person_name and len(person_name.split()) >= 2:
+            queries.append(
+                (
+                    f'"{person_name}" "{company_name}" mobile OR cell OR direct phone',
+                    True,
+                )
+            )
+
+        async with httpx.AsyncClient(
+            timeout=12.0,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; IntentEngine/1.1)"},
+        ) as client:
+            for query, owner_query in queries:
+                try:
+                    response = await client.get(
+                        f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+                    )
+                    if response.status_code >= 400:
+                        continue
+
+                    soup = BeautifulSoup(response.text, "lxml")
+                    for result in soup.select(".result")[:8]:
+                        text = result.get_text(" ", strip=True)
+                        candidates = extract_phone_candidates(text)
+                        if not candidates:
+                            continue
+
+                        if owner_query:
+                            # Prevent a company's generic line from being
+                            # mislabeled as the owner's personal mobile.
+                            has_name = person_name.lower() in text.lower()
+                            explicitly_personal = (
+                                classify_phone_context(candidates[0], text) == "personal"
+                            )
+                            if has_name and explicitly_personal:
+                                personal.extend(candidates)
+                        else:
+                            # Directory snippets can contain nearby businesses;
+                            # require the target company name in the result and
+                            # don't mislabel an explicit mobile as an office line.
+                            if company_name.lower() in text.lower():
+                                public.extend(
+                                    candidate
+                                    for candidate in candidates
+                                    if classify_phone_context(candidate, text) != "personal"
+                                )
+                except Exception as exc:
+                    logger.debug("Public phone search failed for %r: %s", query, exc)
+
+        return self._dedupe_raw_phones(personal), self._dedupe_raw_phones(public)
+
+    def _dedupe_raw_phones(self, phones: list[str]) -> list[str]:
+        """
+        Deduplicate raw phone candidates by digits while preserving order.
+
+        @param phones - Raw candidates
+        @returns Stable deduplicated list
+        """
+        seen: set[str] = set()
+        unique: list[str] = []
+        for phone in phones:
+            digits = re.sub(r"\D", "", phone)
+            if len(digits) < 10 or digits in seen:
+                continue
+            seen.add(digits)
+            unique.append(phone)
+        return unique
 
     async def _fetch_page_html(
         self,
@@ -931,7 +1065,7 @@ class LeadScraper:
 
     async def _validate_phones(self, leads: list[CompanyLead]) -> list[CompanyLead]:
         """
-        Dual-verify personal + public phone candidates (two independent passes).
+        Validate personal + public phone candidates in two structural passes.
 
         Only numbers that clear both passes are persisted on the lead.
         """

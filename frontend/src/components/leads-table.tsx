@@ -193,7 +193,7 @@ export function LeadsTable({ leads, message }: LeadsTableProps) {
                             </span>
                             {lead.personal_phone_verified ? (
                               <span className="ml-1 text-[10px] uppercase text-ink/40">
-                                ✓✓
+                                valid
                               </span>
                             ) : null}
                           </span>
@@ -204,7 +204,7 @@ export function LeadsTable({ leads, message }: LeadsTableProps) {
                             <span className="text-ink/80">{lead.public_phone}</span>
                             {lead.public_phone_verified ? (
                               <span className="ml-1 text-[10px] uppercase text-ink/40">
-                                ✓✓
+                                valid
                               </span>
                             ) : null}
                           </span>

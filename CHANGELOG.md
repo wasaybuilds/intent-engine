@@ -10,8 +10,9 @@
 - **Website column** — every lead now shows its site; businesses without one
   get a clear "No site" badge instead of being dropped from results
 - **Personal + public phones** — Maps business line, website `tel:` links,
-  name-proximity owner numbers, and Apollo people/match reveal; each number
-  is dual-verified before save
+  JSON-LD, public search results, name-proximity owner numbers, and optional
+  Apollo people/match reveal; each number passes two structural validation
+  checks before save
 - **Niche combobox** — pick from popular niches or type a custom one
 - **Partial leads** — companies where no named decision maker could be found
   are kept as "Owner / Team" rows instead of silently disappearing

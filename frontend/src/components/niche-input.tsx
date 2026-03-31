@@ -85,6 +85,7 @@ export function NicheInput({
         id={id}
         type="text"
         role="combobox"
+        aria-controls={`${id}-suggestions`}
         aria-expanded={isOpen}
         aria-autocomplete="list"
         autoComplete="off"
@@ -100,6 +101,7 @@ export function NicheInput({
 
       {isOpen && suggestions.length > 0 ? (
         <ul
+          id={`${id}-suggestions`}
           role="listbox"
           className="panel absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto shadow-lg"
         >
