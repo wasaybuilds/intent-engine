@@ -4,15 +4,20 @@
 
 ### Added
 
-- **Lead detail view** — click "View" on any result to open a full drawer with
-  website, contact, tech stack, recent news, icebreaker, and the complete
-  3-step email sequence
+- **Lead detail view** — click a result row to open a full drawer with
+  website, contact, phones, tech stack, recent news, icebreaker, and the
+  complete 3-step email sequence
 - **Website column** — every lead now shows its site; businesses without one
   get a clear "No site" badge instead of being dropped from results
+- **Personal + public phones** — Maps business line, website `tel:` links,
+  name-proximity owner numbers, and Apollo people/match reveal; each number
+  is dual-verified before save
+- **Niche combobox** — pick from popular niches or type a custom one
 - **Partial leads** — companies where no named decision maker could be found
   are kept as "Owner / Team" rows instead of silently disappearing
 - **In-app release notes** — new Releases page in the sidebar
 - New branded favicon (target mark)
+- Table pagination and fixed (non-scrolling) sidebar
 
 ### Fixed
 
@@ -23,6 +28,9 @@
   executive title is present
 - Broader decision-maker title matching (General Manager, Operations
   Manager, Owner, Proprietor)
+- Google Maps website extraction discarded `google.com/url` redirect links
+- Phone `tel:` URI cleaning, toll-free rejected as "personal", source
+  priority (Apollo → Hunter → Maps → site)
 
 ## 1.0.0 — 2026-03-31
 

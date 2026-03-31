@@ -25,6 +25,7 @@ class Settings:
       PROXY_PASSWORD         - Proxy auth password
       HUNTER_API_KEY         - Hunter.io domain search API key
       APOLLO_API_KEY         - Apollo.io people search API key
+      NUMVERIFY_API_KEY      - Optional Numverify key for phone pass-2 carrier check
     """
 
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -49,6 +50,7 @@ class Settings:
     proxy_password: str = os.getenv("PROXY_PASSWORD", "").strip()
     hunter_api_key: str = os.getenv("HUNTER_API_KEY", "").strip()
     apollo_api_key: str = os.getenv("APOLLO_API_KEY", "").strip()
+    numverify_api_key: str = os.getenv("NUMVERIFY_API_KEY", "").strip()
     cors_origins: list[str] = [
         origin.strip()
         for origin in os.getenv(

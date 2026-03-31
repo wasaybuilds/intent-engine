@@ -30,6 +30,9 @@ h3,
   .shell-sidebar {
     background-color: var(--ink);
     color: var(--paper);
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
   }
 
   .shell-main {

@@ -1,6 +1,7 @@
 "use client";
 
 import { LocationInput } from "@/components/location-input";
+import { NicheInput } from "@/components/niche-input";
 
 interface ScrapeFormProps {
   niche: string;
@@ -38,15 +39,13 @@ export function ScrapeForm({
           >
             Niche
           </label>
-          <input
+          <NicheInput
             id="niche"
-            type="text"
             required
             disabled={isLoading}
-            placeholder="e.g. dentists, HVAC companies"
+            placeholder="Pick a niche or type your own…"
             value={niche}
-            onChange={(event) => onNicheChange(event.target.value)}
-            className="field-input"
+            onChange={onNicheChange}
           />
         </div>
 

@@ -22,6 +22,10 @@ class LeadResult(BaseModel):
     decision_maker_name: str
     title: str
     verified_email: str
+    personal_phone: str = ""
+    public_phone: str = ""
+    personal_phone_verified: bool = False
+    public_phone_verified: bool = False
     tech_stack: list[str] = Field(default_factory=list)
     recent_news: Optional[str] = None
     custom_icebreaker: str = ""

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Generator
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.config import settings
@@ -71,6 +71,10 @@ class Lead(Base):
     decision_maker_name: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     verified_email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
+    personal_phone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    public_phone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    personal_phone_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    public_phone_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     tech_stack: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     recent_news: Mapped[str | None] = mapped_column(Text, nullable=True)
     custom_icebreaker: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -104,6 +108,10 @@ def _migrate_lead_columns() -> None:
         "email_2_followup": "TEXT DEFAULT ''",
         "email_3_breakup": "TEXT DEFAULT ''",
         "enrichment_source": "VARCHAR(64) DEFAULT 'scrape'",
+        "personal_phone": "VARCHAR(64) DEFAULT ''",
+        "public_phone": "VARCHAR(64) DEFAULT ''",
+        "personal_phone_verified": "BOOLEAN DEFAULT FALSE",
+        "public_phone_verified": "BOOLEAN DEFAULT FALSE",
     }
 
     with engine.begin() as conn:

@@ -19,6 +19,9 @@ const PAGE_SIZE = 10;
 export function LeadsTable({ leads, message }: LeadsTableProps) {
   const verifiedCount = leads.filter((lead) => lead.verified_email).length;
   const noSiteCount = leads.filter((lead) => !lead.website).length;
+  const phoneCount = leads.filter(
+    (lead) => lead.personal_phone || lead.public_phone,
+  ).length;
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [page, setPage] = useState(1);
 
@@ -57,6 +60,7 @@ export function LeadsTable({ leads, message }: LeadsTableProps) {
             {noSiteCount > 0
               ? ` · ${noSiteCount} without a website`
               : ""}
+            {phoneCount > 0 ? ` · ${phoneCount} with phone` : ""}
             {leads.length > 0 ? " · Click a row for full details" : ""}
           </p>
         </div>
@@ -90,8 +94,8 @@ export function LeadsTable({ leads, message }: LeadsTableProps) {
               <th className="w-[20%] min-w-[200px] px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink/55">
                 Email
               </th>
-              <th className="w-[16%] min-w-[160px] px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink/55">
-                Tech
+              <th className="w-[18%] min-w-[180px] px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink/55">
+                Phones
               </th>
             </tr>
           </thead>
@@ -180,19 +184,34 @@ export function LeadsTable({ leads, message }: LeadsTableProps) {
                       )}
                     </td>
                     <td className="px-5 py-4">
-                      <div className="flex max-w-[200px] flex-wrap gap-1.5">
-                        {(lead.tech_stack ?? []).length > 0 ? (
-                          lead.tech_stack.map((tech) => (
-                            <span
-                              key={tech}
-                              className="border border-ink/20 bg-paper px-2 py-0.5 text-xs text-ink"
-                            >
-                              {tech}
+                      <div className="flex max-w-[220px] flex-col gap-1 text-xs">
+                        {lead.personal_phone ? (
+                          <span title={lead.personal_phone}>
+                            <span className="text-ink/45">Personal · </span>
+                            <span className="font-medium text-ink">
+                              {lead.personal_phone}
                             </span>
-                          ))
-                        ) : (
-                          <span className="text-xs text-ink/35">—</span>
-                        )}
+                            {lead.personal_phone_verified ? (
+                              <span className="ml-1 text-[10px] uppercase text-ink/40">
+                                ✓✓
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : null}
+                        {lead.public_phone ? (
+                          <span title={lead.public_phone}>
+                            <span className="text-ink/45">Public · </span>
+                            <span className="text-ink/80">{lead.public_phone}</span>
+                            {lead.public_phone_verified ? (
+                              <span className="ml-1 text-[10px] uppercase text-ink/40">
+                                ✓✓
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : null}
+                        {!lead.personal_phone && !lead.public_phone ? (
+                          <span className="text-ink/35">—</span>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

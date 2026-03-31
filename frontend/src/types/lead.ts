@@ -6,6 +6,12 @@ export interface Lead {
   decision_maker_name: string;
   title: string;
   verified_email: string;
+  /** Owner / mobile / direct dial when found and dual-verified */
+  personal_phone: string;
+  /** Public business line (Maps / website) when dual-verified */
+  public_phone: string;
+  personal_phone_verified: boolean;
+  public_phone_verified: boolean;
   tech_stack: string[];
   recent_news: string | null;
   custom_icebreaker: string;

@@ -115,6 +115,52 @@ export function LeadDetailDrawer({ lead, onClose }: LeadDetailDrawerProps) {
 
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-ink/45">
+              Phones
+            </h3>
+            <div className="mt-2 space-y-2">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-ink/45">
+                  Personal / owner
+                </p>
+                {lead.personal_phone ? (
+                  <p className="mt-0.5 font-medium text-ink">
+                    <a href={`tel:${lead.personal_phone}`} className="underline-offset-2 hover:underline">
+                      {lead.personal_phone}
+                    </a>
+                    {lead.personal_phone_verified ? (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-ink/45">
+                        dual-verified
+                      </span>
+                    ) : null}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-xs text-ink/40">Not found</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-ink/45">
+                  Public / business
+                </p>
+                {lead.public_phone ? (
+                  <p className="mt-0.5 font-medium text-ink">
+                    <a href={`tel:${lead.public_phone}`} className="underline-offset-2 hover:underline">
+                      {lead.public_phone}
+                    </a>
+                    {lead.public_phone_verified ? (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-ink/45">
+                        dual-verified
+                      </span>
+                    ) : null}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-xs text-ink/40">Not found</p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink/45">
               Tech stack
             </h3>
             {(lead.tech_stack ?? []).length > 0 ? (

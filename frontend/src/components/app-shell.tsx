@@ -41,13 +41,14 @@ export function AppShell({ children, topAction }: AppShellProps) {
         />
       ) : null}
 
+      {/* Fixed viewport-height sidebar — never scrolls with page content */}
       <aside
-        className={`shell-sidebar fixed inset-y-0 left-0 z-50 flex w-60 flex-col lg:static lg:translate-x-0 ${
+        className={`shell-sidebar fixed inset-y-0 left-0 z-50 flex w-60 flex-col transition-transform lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div
-          className="px-5 py-6"
+          className="shrink-0 px-5 py-6"
           style={{ borderBottom: "1px solid color-mix(in srgb, #F4F4F5 15%, transparent)" }}
         >
           <p className="font-display text-xl font-semibold tracking-tight">
@@ -58,7 +59,7 @@ export function AppShell({ children, topAction }: AppShellProps) {
           </p>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden px-3 py-4">
           {NAV.map((item) => {
             const active =
               item.href === "/"
@@ -87,7 +88,7 @@ export function AppShell({ children, topAction }: AppShellProps) {
         </nav>
 
         <div
-          className="px-4 py-4"
+          className="shrink-0 px-4 py-4"
           style={{ borderTop: "1px solid color-mix(in srgb, #F4F4F5 15%, transparent)" }}
         >
           <SignedOut>
@@ -115,7 +116,8 @@ export function AppShell({ children, topAction }: AppShellProps) {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* Offset for fixed sidebar width on desktop */}
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
         <header className="shell-topbar flex items-center justify-between px-4 py-3 lg:px-8">
           <button
             type="button"
