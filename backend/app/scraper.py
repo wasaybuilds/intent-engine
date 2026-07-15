@@ -272,7 +272,11 @@ class LeadScraper:
         """
         Search Google Maps via Playwright for businesses matching niche + location.
 
-        @returns List of {company_name, website} dicts
+        Modern Maps lists phone + website on each feed card (role=article), so we
+        parse the feed first. Detail-panel click is only a fallback when a card
+        is missing either field.
+
+        @returns List of {company_name, website, public_phone, location} dicts
         """
         if not self._browser:
             return []
@@ -287,45 +291,68 @@ class LeadScraper:
             url = f"https://www.google.com/maps/search/{query}"
             await page.goto(url, wait_until="domcontentloaded", timeout=self.config.page_timeout_ms)
             await page.wait_for_timeout(self.config.navigation_delay_ms)
+            await self._dismiss_maps_consent(page)
 
             feed = page.locator('div[role="feed"]')
             if await feed.count() > 0:
-                for _ in range(3):
+                # Scroll enough to load a full page of cards (phone/website render in-card)
+                for _ in range(5):
                     await feed.evaluate("el => el.scrollTop = el.scrollHeight")
-                    await page.wait_for_timeout(800)
+                    await page.wait_for_timeout(900)
 
-            listings = page.locator('a[href*="/maps/place/"]')
-            count = min(await listings.count(), self.config.max_companies * 2)
+            # Prefer article cards — each row already includes phone + Website link
+            articles = page.locator('div[role="feed"] div[role="article"]')
+            article_count = await articles.count()
+            if article_count == 0:
+                # Older Maps layouts used bare place links without role=article
+                article_count = await page.locator('a[href*="/maps/place/"]').count()
+                articles = page.locator('a[href*="/maps/place/"]')
 
             seen_names: set[str] = set()
-            for i in range(count):
+            for i in range(min(article_count, self.config.max_companies * 3)):
                 if len(results) >= self.config.max_companies:
                     break
 
                 try:
-                    listing = listings.nth(i)
-                    name = (await listing.get_attribute("aria-label")) or ""
-                    if not name or name.lower() in seen_names:
+                    card = articles.nth(i)
+                    parsed = await self._parse_maps_feed_card(card)
+                    if not parsed:
                         continue
 
+                    name = parsed["company_name"]
+                    if name.lower() in seen_names:
+                        continue
                     seen_names.add(name.lower())
-                    await listing.click()
-                    # Wait for place detail panel to settle before reading Website
-                    await page.wait_for_timeout(max(self.config.navigation_delay_ms, 1_800))
 
-                    # Keep businesses without a website too — they surface as
-                    # "no site" leads instead of silently disappearing
-                    website = await self._extract_website_from_detail(page)
+                    website = parsed.get("website") or ""
+                    public_phone = parsed.get("public_phone") or ""
+
+                    # Only open the detail pane when the card is missing data —
+                    # clicking every row is slow and often unnecessary now.
+                    if not website or not public_phone:
+                        try:
+                            place_link = card.locator('a[href*="/maps/place/"]').first
+                            if await place_link.count() == 0:
+                                place_link = card
+                            await place_link.click(timeout=5_000)
+                            await page.wait_for_timeout(
+                                max(self.config.navigation_delay_ms, 1_800)
+                            )
+                            if not website:
+                                website = (await self._extract_website_from_detail(page)) or ""
+                            if not public_phone:
+                                public_phone = (await self._extract_phone_from_detail(page)) or ""
+                        except Exception as exc:
+                            logger.debug("Detail fallback failed for %s: %s", name, exc)
+
                     if not website:
-                        logger.info("No website found on Maps for %s", name.strip())
-
-                    public_phone = await self._extract_phone_from_detail(page)
+                        logger.info("No website found on Maps for %s", name)
 
                     results.append(
                         {
-                            "company_name": name.strip(),
+                            "company_name": name,
                             "website": self._prefer_https(website) if website else "",
-                            "public_phone": public_phone or "",
+                            "public_phone": public_phone,
                             "location": location,
                         }
                     )
@@ -341,61 +368,133 @@ class LeadScraper:
 
         return results
 
-    async def _extract_website_from_detail(self, page: Page) -> Optional[str]:
+    async def _dismiss_maps_consent(self, page: Page) -> None:
         """
-        Pull the website link from an open Google Maps place detail panel.
+        Dismiss Google consent / cookie banners that block the results feed.
 
-        Maps markup changes often and many links are google.com/url redirects —
-        wait for the panel, try several selectors, then unwrap redirects.
+        @param page - Maps search page
         """
-        # Detail pane needs a moment after click before the Website action appears
-        try:
-            await page.wait_for_selector(
-                'a[data-item-id="authority"], a[data-item-id*="authority"], '
-                'a[aria-label*="Website" i], a[aria-label*="web site" i]',
-                timeout=5_000,
-            )
-        except Exception:
-            # Still try extraction below — panel may use a different label
-            pass
-
-        selectors = [
-            'a[data-item-id="authority"]',
-            'a[data-item-id*="authority"]',
-            'a[aria-label*="Website" i]',
-            'a[aria-label*="Web site" i]',
-            'a[aria-label*="website" i]',
-            'button[aria-label*="Website" i]',
-            'a[data-tooltip*="Website" i]',
-        ]
-
-        for selector in selectors:
+        for selector in (
+            'button:has-text("Accept all")',
+            'button:has-text("I agree")',
+            'button:has-text("Reject all")',
+            'form[action*="consent"] button',
+        ):
             locator = page.locator(selector).first
             try:
                 if await locator.count() == 0:
                     continue
-
-                href = await locator.get_attribute("href")
-                aria = (await locator.get_attribute("aria-label")) or ""
-
-                # Try href first (often a google redirect), then aria-label domain
-                for candidate in (href, self._url_from_aria_label(aria)):
-                    website = self._normalize_maps_website(candidate)
-                    if website:
-                        return website
-            except Exception as exc:
-                logger.debug("Website selector %s failed: %s", selector, exc)
+                await locator.click(timeout=2_000)
+                await page.wait_for_timeout(800)
+                return
+            except Exception:
                 continue
 
-        # Last resort: scan visible external links in the place panel
+    async def _parse_maps_feed_card(self, card) -> Optional[dict]:
+        """
+        Read company name, website, and public phone from one Maps feed card.
+
+        Current Maps markup embeds `+1 214-555-0100` and a
+        `Visit {Name}'s website` link directly in each `role=article` row.
+
+        @param card - Playwright locator for a feed article (or place link)
+        @returns Parsed dict or None when no usable company name exists
+        """
+        name = ""
+        place = card.locator('a[href*="/maps/place/"]').first
+        if await place.count() > 0:
+            name = ((await place.get_attribute("aria-label")) or "").strip()
+        if not name:
+            # Card itself may be the place anchor on older layouts
+            name = ((await card.get_attribute("aria-label")) or "").strip()
+        if not name:
+            return None
+
+        website = ""
+        web_link = card.locator(
+            'a[aria-label*="website" i], a[aria-label*="Website" i], a[aria-label*="web site" i]'
+        ).first
+        if await web_link.count() > 0:
+            href = await web_link.get_attribute("href")
+            aria = (await web_link.get_attribute("aria-label")) or ""
+            for candidate in (href, self._url_from_aria_label(aria)):
+                normalized = self._normalize_maps_website(candidate)
+                if normalized:
+                    website = normalized
+                    break
+
+        public_phone = ""
+        try:
+            card_text = (await card.inner_text()) or ""
+        except Exception:
+            card_text = ""
+        candidates = extract_phone_candidates(card_text)
+        if candidates:
+            # Prefer the first NANP-looking number in the card (usually the business line)
+            public_phone = clean_phone_raw(candidates[0])
+
+        return {
+            "company_name": name,
+            "website": website,
+            "public_phone": public_phone,
+        }
+
+    async def _extract_website_from_detail(self, page: Page) -> Optional[str]:
+        """
+        Pull the website link from an open Google Maps place detail panel.
+
+        Maps markup changes often — prefer `Visit {Name}'s website` aria labels
+        and direct hrefs; unwrap google.com/url redirects when present.
+        """
+        try:
+            await page.wait_for_selector(
+                'a[aria-label*="website" i], a[data-item-id="authority"], '
+                'a[data-item-id*="authority"], a[aria-label*="Website" i]',
+                timeout=5_000,
+            )
+        except Exception:
+            pass
+
+        selectors = [
+            'a[aria-label*="Visit" i][aria-label*="website" i]',
+            'a[aria-label*="website" i]',
+            'a[aria-label*="Website" i]',
+            'a[aria-label*="Web site" i]',
+            'a[data-item-id="authority"]',
+            'a[data-item-id*="authority"]',
+            'button[aria-label*="Website" i]',
+            'a[data-tooltip*="Website" i]',
+        ]
+
+        # Prefer links inside the place pane (h1 sibling tree) over feed leftovers
+        scoped = page.locator('div[role="main"]').last
+
+        for selector in selectors:
+            for root in (scoped, page):
+                locator = root.locator(selector).first
+                try:
+                    if await locator.count() == 0:
+                        continue
+
+                    href = await locator.get_attribute("href")
+                    aria = (await locator.get_attribute("aria-label")) or ""
+
+                    for candidate in (href, self._url_from_aria_label(aria)):
+                        website = self._normalize_maps_website(candidate)
+                        if website:
+                            return website
+                except Exception as exc:
+                    logger.debug("Website selector %s failed: %s", selector, exc)
+                    continue
+
         return await self._extract_website_from_panel_links(page)
 
     async def _extract_phone_from_detail(self, page: Page) -> Optional[str]:
         """
         Pull the public business phone from a Google Maps place detail panel.
 
-        Waits for the phone control (same pattern as website extraction), then
-        reads data-item-id / tel: / aria-label — the three formats Maps uses.
+        Newer Maps UIs often show phones as plain text (`+1 214-555-0100`)
+        instead of `data-item-id="phone:tel:…"`. Fall back to panel text scan.
 
         @param page - Maps place detail page
         @returns Raw phone string or None
@@ -403,8 +502,9 @@ class LeadScraper:
         try:
             await page.wait_for_selector(
                 'button[data-item-id^="phone:tel:"], a[data-item-id^="phone:tel:"], '
-                'a[href^="tel:"], button[aria-label*="Phone" i], a[aria-label*="Phone" i]',
-                timeout=5_000,
+                'a[href^="tel:"], button[aria-label*="Phone" i], a[aria-label*="Phone" i], '
+                'button[aria-label*="Call" i], button[data-tooltip*="phone" i]',
+                timeout=4_000,
             )
         except Exception:
             pass
@@ -415,6 +515,7 @@ class LeadScraper:
             'a[href^="tel:"]',
             'button[aria-label*="Phone" i]',
             'a[aria-label*="Phone" i]',
+            'button[aria-label*="Call" i]',
             'button[data-tooltip*="Copy phone" i]',
             'button[data-tooltip*="phone" i]',
         ]
@@ -430,20 +531,40 @@ class LeadScraper:
                 aria = (await locator.get_attribute("aria-label")) or ""
                 text = (await locator.inner_text()) or ""
 
-                # data-item-id="phone:tel:+15551234567" (most reliable Maps form)
                 if "phone:tel:" in data_id:
                     return clean_phone_raw(data_id.split("phone:tel:", 1)[1])
                 if href.lower().startswith("tel:"):
                     return clean_phone_raw(href)
 
                 for blob in (aria, text):
-                    # aria often looks like "Phone: (512) 555-0100"
                     candidates = extract_phone_candidates(blob)
                     if candidates:
                         return clean_phone_raw(candidates[0])
             except Exception as exc:
                 logger.debug("Phone selector %s failed: %s", selector, exc)
                 continue
+
+        # Plain-text fallback: scan the place pane for the first phone pattern
+        try:
+            pane = page.locator('div[role="main"]').last
+            pane_text = (await pane.inner_text()) if await pane.count() else ""
+            # Prefer the h1 section — first phone near the business title is usually correct
+            h1 = page.locator("h1").last
+            if await h1.count() > 0:
+                # Sibling / parent chunk around the title tends to include the business line
+                chunk = await h1.evaluate(
+                    """el => {
+                      const root = el.closest('[role="main"]') || el.parentElement;
+                      return (root && root.innerText) ? root.innerText.slice(0, 800) : '';
+                    }"""
+                )
+                if isinstance(chunk, str) and chunk.strip():
+                    pane_text = chunk
+            candidates = extract_phone_candidates(pane_text or "")
+            if candidates:
+                return clean_phone_raw(candidates[0])
+        except Exception as exc:
+            logger.debug("Phone text scan failed: %s", exc)
 
         return None
 
@@ -478,7 +599,10 @@ class LeadScraper:
 
     def _url_from_aria_label(self, aria_label: str) -> Optional[str]:
         """
-        Extract a URL or domain from Maps aria-labels like 'Website: example.com'.
+        Extract a URL or domain from Maps aria-labels.
+
+        Supports legacy `Website: example.com` and newer
+        `Visit {Name}'s website` (domain comes from href in that case).
 
         @param aria_label - Accessibility label text
         @returns Raw URL/domain string or None
@@ -493,6 +617,8 @@ class LeadScraper:
         )
         if match:
             return match.group(1).rstrip(".,);]")
+
+        # Newer Maps: "Visit Acme HVAC's website" — no domain in the label
         return None
 
     def _normalize_maps_website(self, href: Optional[str]) -> Optional[str]:
@@ -659,11 +785,14 @@ class LeadScraper:
             )
             public_raw.extend((phone, "public_web") for phone in web_public)
 
-        # No website — keep Maps/public-web phone and return a partial lead shell
+        # No website — still keep Maps/public-web phone as a callable lead shell
         if not company.get("website"):
             return CompanyLead(
                 company_name=company["company_name"],
                 website="",
+                decision_maker_name="Owner / Team",
+                title="Business contact",
+                enrichment_source="partial",
                 _phone_personal_raw=personal_raw,
                 _phone_public_raw=public_raw,
             )

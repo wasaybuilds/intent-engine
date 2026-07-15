@@ -85,7 +85,7 @@ export function ScrapeForm({
       </div>
 
       <button type="submit" disabled={isLoading} className="btn-primary mt-5 w-full sm:w-auto">
-        {isLoading ? "Scraping…" : "Find decision makers"}
+        {isLoading ? "Scrape already running…" : "Find decision makers"}
       </button>
     </form>
   );

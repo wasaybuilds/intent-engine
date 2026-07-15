@@ -37,6 +37,29 @@ export function HistoryPage() {
     loadHistory();
   }, [loadHistory]);
 
+  const hasRunningJob = jobs.some((job) =>
+    ["PENDING", "STARTED", "PROGRESS"].includes(job.status),
+  );
+
+  // Keep running jobs fresh so History shows live status while Scrape is elsewhere
+  useEffect(() => {
+    if (!hasRunningJob) return;
+
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const token = await getToken();
+          const data = await getScrapeHistory(token);
+          setJobs(data.jobs);
+        } catch {
+          // Soft refresh — keep the last good list on transient errors
+        }
+      })();
+    }, 4000);
+
+    return () => window.clearInterval(timer);
+  }, [hasRunningJob, getToken]);
+
   async function handleViewJob(job: ScrapeJobSummary) {
     setIsLoadingDetail(true);
     setError("");
@@ -76,7 +99,9 @@ export function HistoryPage() {
             History
           </h1>
           <p className="mt-2 max-w-2xl text-ink/65">
-            Review previous scrapes and re-download lead CSVs.
+            Review previous scrapes and re-download lead CSVs. Jobs still
+            running show as PENDING / STARTED — return to Scrape to watch live
+            progress.
           </p>
         </header>
 

@@ -44,6 +44,8 @@ def _decode_clerk_token(token: str) -> dict:
         decode_kwargs: dict = {
             "algorithms": ["RS256"],
             "options": {"verify_aud": False},
+            # Clerk iat can be a few seconds ahead of local clock — avoid false 401s
+            "leeway": 60,
         }
         if settings.clerk_issuer:
             decode_kwargs["issuer"] = settings.clerk_issuer

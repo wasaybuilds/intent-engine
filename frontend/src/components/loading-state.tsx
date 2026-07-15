@@ -14,18 +14,27 @@ const PIPELINE_STEPS = [
 interface LoadingStateProps {
   progress?: TaskProgress | null;
   taskStatus?: string;
+  niche?: string;
+  location?: string;
 }
 
 /**
  * Pipeline progress panel — static indicators, no spin animation.
  */
-export function LoadingState({ progress, taskStatus }: LoadingStateProps) {
+export function LoadingState({
+  progress,
+  taskStatus,
+  niche,
+  location,
+}: LoadingStateProps) {
   const activeStep = (progress?.step || taskStatus || "PENDING").toUpperCase();
   const activeIndex = Math.max(
     0,
     PIPELINE_STEPS.findIndex((step) => activeStep.includes(step.key)),
   );
   const percent = progress?.percent ?? 0;
+  const searchLabel =
+    niche && location ? `${niche} · ${location}` : niche || location || "";
 
   return (
     <div role="status" aria-live="polite" className="panel p-8">
@@ -33,8 +42,12 @@ export function LoadingState({ progress, taskStatus }: LoadingStateProps) {
         <h2 className="font-display text-xl font-semibold text-ink">
           Scraping in progress
         </h2>
+        {searchLabel ? (
+          <p className="mt-1 text-sm font-medium text-ink">{searchLabel}</p>
+        ) : null}
         <p className="mt-1 text-sm text-ink/60">
-          Jobs run in the background. This page polls for status.
+          Safe to open History or switch tabs — come back here and progress
+          continues. Only one scrape runs at a time.
         </p>
         {progress?.detail ? (
           <p className="mt-3 text-sm text-ink">{progress.detail}</p>
