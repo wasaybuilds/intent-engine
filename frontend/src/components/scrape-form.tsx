@@ -13,6 +13,7 @@ interface ScrapeFormProps {
 }
 
 const SUGGESTIONS = [
+  { niche: "used car dealerships", location: "Houston TX" },
   { niche: "dentists", location: "Austin TX" },
   { niche: "HVAC companies", location: "Dallas TX" },
   { niche: "personal injury lawyers", location: "Miami FL" },
